@@ -1,18 +1,12 @@
 from src.core.llm import AgentMessage, llmProvider
 from src.engine.workflow.nodes.utils import print_phase
 from src.engine.workflow.state import InvestigationState
-
+from src.config.prompt import UNDERSTAND_PROMPT
 
 def get_understand_node(llm: llmProvider):
     def _understand(state: InvestigationState):
         print_phase("Query Understanding")
-        prompt = (
-            f"Analyze the intent behind this query: '{state['query']}'.\n"
-            "First, output EXACTLY ONE of the following tags on its own line: [INVESTIGATION] or [GENERAL_QA].\n"
-            "- Use [INVESTIGATION] if the user is asking for the root cause of an incident, outage, or alert.\n"
-            "- Use [GENERAL_QA] if the user is asking for general information, such as who owns a service, what a service does, etc.\n"
-            "Then, provide a brief explanation of the query's intent."
-        )
+        prompt = UNDERSTAND_PROMPT.format(query=state['query'])
         msg = llm.generate([AgentMessage(role="system", content=prompt)])
 
         intent = "INVESTIGATION"

@@ -1,7 +1,7 @@
-import time
+from rich.console import Console
+from rich.panel import Panel
 
+console = Console()
 
-def print_phase(name: str):
-    print("-" * 50)
-    print(f"\033[94m[{name}]\033[0m")
-    time.sleep(0.5)
+def print_phase(name: str, style: str = "bold cyan"):
+    console.print(Panel(f"[{style}]{name}[/]", border_style=style, expand=False))

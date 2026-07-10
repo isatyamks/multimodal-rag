@@ -30,4 +30,3 @@ from src.core.contracts import (
     SearchResult,
 )
 from src.core.validation import ValidationIssue, ValidationReport
-from src.core.benchmark import BenchmarkQuery, BenchmarkResult, BenchmarkSuite

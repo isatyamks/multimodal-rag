@@ -196,3 +196,56 @@ class Dataset(BaseModel):
     postmortems: Dict[str, Postmortem] = Field(default_factory=dict)
     slack_messages: Dict[str, SlackMessage] = Field(default_factory=dict)
     test_cases: Dict[str, TestCase] = Field(default_factory=dict)
+
+
+class Capability(BaseModel):
+    name: str
+    description: str
+    source_type: Literal["internal", "external"] = "internal"
+
+class CapabilityPlan(BaseModel):
+    capabilities: List[Capability] = Field(default_factory=list)
+
+class Evidence(BaseModel):
+    id: str
+    source: str
+    source_id: str
+    timestamp: str
+    confidence: float
+    severity: str
+    relationships: List[str] = Field(default_factory=list)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    content: str
+    artifact_type: str
+    provenance: str
+    retrieval_method: str
+    retrieval_time: str
+    hash: str
+    version: str = "v1"
+
+class EvidenceLedger(BaseModel):
+    entries: List[Evidence] = Field(default_factory=list)
+
+    def add_entry(self, entry: Evidence):
+        # Deduplication based on hash or id
+        for existing in self.entries:
+            if existing.hash == entry.hash or existing.id == entry.id:
+                # Update confidence if new evidence is stronger
+                if entry.confidence > existing.confidence:
+                    existing.confidence = entry.confidence
+                return
+        
+        self.entries.append(entry)
+
+    def get_ranked_entries(self) -> List[Evidence]:
+        # Sort by confidence
+        return sorted(self.entries, key=lambda x: x.confidence, reverse=True)
+
+    def format_for_prompt(self) -> str:
+        if not self.entries:
+            return "No evidence collected yet."
+        
+        lines = []
+        for e in self.get_ranked_entries():
+            lines.append(f"[{e.id}] (Conf: {e.confidence:.2f}) [Source: {e.source} | Type: {e.artifact_type} | Provenance: {e.provenance}]: {e.content}")
+        return "\n".join(lines)

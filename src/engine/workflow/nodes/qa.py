@@ -2,14 +2,15 @@ from src.core.llm import AgentMessage, llmProvider
 from src.data.graph import GraphService
 from src.engine.workflow.nodes.utils import print_phase
 from src.engine.workflow.state import InvestigationState
-
+from src.config.prompt import QA_AGENT_PROMPT
 
 def get_qa_node(llm: llmProvider, graph_svc: GraphService):
     def _qa_generation(state: InvestigationState):
-        print_phase("General QA Generation")
+        from src.engine.workflow.nodes.utils import console
+        print_phase("General QA Generation", style="bold magenta")
 
         context_parts = []
-        for a_id in state["expanded_artifacts"]:
+        for a_id in state.get("expanded_artifacts", []):
             node_data = graph_svc.get_node(a_id)
             if node_data:
                 obj = node_data.get("obj")
@@ -20,15 +21,12 @@ def get_qa_node(llm: llmProvider, graph_svc: GraphService):
 
         context_str = "\n---\n".join(context_parts[:20])
 
-        prompt = (
-            f"You are codentir, an AI assistant answering a general knowledge question based on the provided graph context.\n"
-            f"Question: {state['query']}\n\n"
-            f"Graph Context:\n{context_str}\n\n"
-            "Provide a direct, concise answer. Do not apologize or mention the context."
-        )
+        prompt = QA_AGENT_PROMPT.format(query=state['query'], context_str=context_str)
 
-        msg = llm.generate([AgentMessage(role="system", content=prompt)])
-        print(f"  \033[92m{msg.content}\033[0m")
+        with console.status("[magenta]Generating answer...[/magenta]", spinner="dots"):
+            msg = llm.generate([AgentMessage(role="system", content=prompt)])
+            
+        console.print(f"  [green]{msg.content}[/green]")
 
         report = f"Issue: {state['query']}\n\nAnswer:\n{msg.content}"
         return {

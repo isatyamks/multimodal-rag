@@ -1,135 +1,78 @@
 from langgraph.graph import END, StateGraph
-
 from src.engine.workflow.state import InvestigationState
-
 
 def build_workflow(self_obj):
     wf = StateGraph(InvestigationState)
 
-    from src.engine.workflow.nodes.evidence import (
-        get_cause_candidate_extraction_node,
-        get_evidence_chain_discovery_node,
-    )
-    from src.engine.workflow.nodes.ranking import (
-        get_change_ranking_node,
-        get_path_ranking_node,
-    )
-    from src.engine.workflow.nodes.understand import get_understand_node
-    from src.engine.workflow.nodes.retrieval import get_retrieval_node
-    from src.engine.workflow.nodes.change import get_change_node
+    from src.engine.workflow.nodes.rule_router import get_rule_router_node
+    from src.engine.workflow.nodes.planner import get_planner_node
+    from src.engine.workflow.nodes.capability_resolver import get_capability_resolver_node
+    from src.engine.workflow.nodes.integration import get_integration_node
+    from src.engine.workflow.nodes.normalization import get_evidence_normalization_node
+    from src.engine.workflow.nodes.ranking import get_ranking_node
+    from src.engine.workflow.nodes.ledger_node import get_evidence_ledger_node
     from src.engine.workflow.nodes.hypothesis import get_hypothesis_generation_node
-    from src.engine.workflow.nodes.impact import get_impact_node
-    from src.engine.workflow.nodes.action import get_action_generation_node
+    from src.engine.workflow.nodes.verification import get_verification_node
+    from src.engine.workflow.nodes.confidence import get_confidence_node
+    from src.engine.workflow.nodes.root_cause import get_root_cause_analysis_node
+    from src.engine.workflow.nodes.remediation import get_remediation_node
     from src.engine.workflow.nodes.report import get_report_node
+    from src.engine.workflow.nodes.archive import get_archive_node
     from src.engine.workflow.nodes.qa import get_qa_node
-    from src.engine.workflow.nodes.hitl import get_human_in_the_loop_node
 
-    wf.add_node("understand", get_understand_node(self_obj.llm))
-    wf.add_node(
-        "initial_retrieval",
-        get_retrieval_node(self_obj.retrieval_svc, self_obj.graph_svc),
-    )
-    wf.add_node(
-        "evidence_chain_discovery", get_evidence_chain_discovery_node(self_obj.ev_chain)
-    )
-    wf.add_node("path_ranking", get_path_ranking_node(self_obj.path_ranker))
-    wf.add_node(
-        "cause_candidate_extraction",
-        get_cause_candidate_extraction_node(self_obj.candidate_extractor),
-    )
-    wf.add_node("change_ranking", get_change_ranking_node(self_obj.change_ranker))
-    wf.add_node(
-        "extract_change",
-        get_change_node(
-            self_obj.graph_svc,
-            self_obj.deploy_analyzer,
-            self_obj.release_analyzer,
-            self_obj.diff_analyzer,
-            self_obj.code_owner_svc,
-        ),
-    )
-    wf.add_node(
-        "hypothesis_generation", get_hypothesis_generation_node(self_obj.hyp_gen)
-    )
-    wf.add_node("impact", get_impact_node(self_obj.impact_svc))
-    wf.add_node(
-        "action_generation",
-        get_action_generation_node(self_obj.llm, self_obj.graph_svc),
-    )
+    wf.add_node("rule_router", get_rule_router_node(self_obj.llm))
+    wf.add_node("planner", get_planner_node(self_obj.llm))
+    wf.add_node("capability_resolver", get_capability_resolver_node())
+    wf.add_node("integration", get_integration_node())
+    wf.add_node("normalization", get_evidence_normalization_node())
+    wf.add_node("ranking", get_ranking_node())
+    wf.add_node("ledger", get_evidence_ledger_node())
+    wf.add_node("hypothesis", get_hypothesis_generation_node(self_obj.llm))
+    wf.add_node("verification", get_verification_node(self_obj.llm))
+    wf.add_node("confidence", get_confidence_node())
+    wf.add_node("root_cause", get_root_cause_analysis_node())
+    wf.add_node("remediation", get_remediation_node(self_obj.llm))
     wf.add_node("report", get_report_node())
-    wf.add_node(
-        "qa_generation", get_qa_node(self_obj.llm, self_obj.graph_svc)
-    )
-    wf.add_node(
-        "human_in_the_loop",
-        get_human_in_the_loop_node(self_obj.llm, self_obj.graph_svc),
-    )
+    wf.add_node("archive", get_archive_node())
+    wf.add_node("qa_generation", get_qa_node(self_obj.llm, self_obj.graph_svc))
 
-    wf.set_entry_point("understand")
-    wf.add_edge("understand", "initial_retrieval")
+    wf.set_entry_point("rule_router")
 
-    def route_after_ret(s):
-        return (
-            "qa_generation"
-            if s.get("intent") == "GENERAL_QA"
-            else "evidence_chain_discovery"
-        )
+    def route_after_router(s):
+        if s.get("intent") == "GENERAL_QA":
+            return "qa_generation"
+        return "planner"
 
-    wf.add_conditional_edges(
-        "initial_retrieval",
-        route_after_ret,
-        {
-            "evidence_chain_discovery": "evidence_chain_discovery",
-            "qa_generation": "qa_generation",
-        },
-    )
+    wf.add_conditional_edges("rule_router", route_after_router)
+
+    # Linear flow for the initial phase
+    wf.add_edge("planner", "capability_resolver")
+    wf.add_edge("capability_resolver", "integration")
+    wf.add_edge("integration", "normalization")
+    wf.add_edge("normalization", "ranking")
+    wf.add_edge("ranking", "ledger")
+    wf.add_edge("ledger", "hypothesis")
+    
+    # Hypothesis -> Verification -> Confidence
+    wf.add_edge("hypothesis", "verification")
+    wf.add_edge("verification", "confidence")
+
+    # The iterative confidence loop
+    def route_after_confidence(s):
+        nxt = s.get("next_action")
+        if nxt in ["ESCALATE", "INVESTIGATE_MORE"]:
+            return "planner" # Iterative loop back to planner
+        return "root_cause"
+
+    wf.add_conditional_edges("confidence", route_after_confidence)
+
+    # Root Cause -> Remediation -> Report -> Archive -> END
+    wf.add_edge("root_cause", "remediation")
+    wf.add_edge("remediation", "report")
+    wf.add_edge("report", "archive")
+    wf.add_edge("archive", END)
+    
+    # General QA ends directly
     wf.add_edge("qa_generation", END)
-    wf.add_edge("evidence_chain_discovery", "path_ranking")
-    wf.add_edge("path_ranking", "cause_candidate_extraction")
-    wf.add_edge("cause_candidate_extraction", "change_ranking")
-
-    def route_after_sc(s):
-        if (
-            not s.get("expert_consulted")
-            or (not s.get("scored_candidates") and s.get("loop_count", 0) < 3)
-            or (
-                s.get("scored_candidates")
-                and s["scored_candidates"][0].score <= 0.90
-                and s.get("loop_count", 0) < 3
-            )
-        ):
-            return "human_in_the_loop"
-        return "extract_change"
-
-    wf.add_conditional_edges(
-        "change_ranking",
-        route_after_sc,
-        {
-            "human_in_the_loop": "human_in_the_loop",
-            "extract_change": "extract_change",
-        },
-    )
-
-    def route_after_hitl(s):
-        return (
-            "extract_change"
-            if s.get("next_action") == "PROCEED"
-            else "initial_retrieval"
-        )
-
-    wf.add_conditional_edges(
-        "human_in_the_loop",
-        route_after_hitl,
-        {
-            "initial_retrieval": "initial_retrieval",
-            "extract_change": "extract_change",
-        },
-    )
-
-    wf.add_edge("extract_change", "hypothesis_generation")
-    wf.add_edge("hypothesis_generation", "impact")
-    wf.add_edge("impact", "action_generation")
-    wf.add_edge("action_generation", "report")
-    wf.add_edge("report", END)
 
     return wf.compile()

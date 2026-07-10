@@ -1,19 +1,41 @@
-from src.engine.causal.generator import HypothesisGenerator
+import json
+from src.core.llm import AgentMessage, llmProvider
 from src.engine.workflow.nodes.utils import print_phase
 from src.engine.workflow.state import InvestigationState
+from src.config.prompt import HYPOTHESIS_AGENT_PROMPT
 
+def get_hypothesis_generation_node(llm: llmProvider):
+    def _hypothesis_agent(state: InvestigationState):
+        from src.engine.workflow.nodes.utils import console
+        print_phase("Hypothesis Agent", style="bold magenta")
+        
+        ledger = state.get("ledger")
+        query = state.get("query", "")
+        
+        if not ledger or not ledger.entries:
+            console.print("  [bold yellow]No evidence found. Cannot generate hypotheses.[/bold yellow]")
+            return {"hypotheses": []}
 
-def get_hypothesis_generation_node(hyp_gen: HypothesisGenerator):
-    def _hypothesis_generation(state: InvestigationState):
-        print_phase("Technical Explanation Generation")
-        if not state["scored_candidates"]:
-            return {"technical_explanation": "Could not determine a root cause from the graph evidence."}
+        evidence_str = ledger.format_for_prompt()
+        
+        prompt = HYPOTHESIS_AGENT_PROMPT.format(query=query, evidence_str=evidence_str)
+        
+        with console.status("[magenta]Generating hypotheses based on ledger evidence...[/magenta]", spinner="dots"):
+            msg = llm.generate([AgentMessage(role="system", content=prompt)])
+        
+        try:
+            content = msg.content
+            if "```json" in content:
+                content = content.split("```json")[1].split("```")[0]
+            elif "```" in content:
+                content = content.split("```")[1].split("```")[0]
+            
+            hypotheses = json.loads(content.strip())
+        except Exception as e:
+            console.print(f"  [bold red]Failed to parse hypotheses JSON: {e}[/bold red]")
+            hypotheses = []
+            
+        console.print(f"  [cyan]Generated {len(hypotheses)} hypotheses.[/cyan]")
+        return {"hypotheses": hypotheses}
 
-        top_candidate = state["scored_candidates"][0]
-        explanation = hyp_gen.generate(
-            state["query"], top_candidate, state.get("human_feedback", [])
-        )
-        print(f"  \033[90mGenerated deterministic explanation.\033[0m")
-        return {"technical_explanation": explanation}
-
-    return _hypothesis_generation
+    return _hypothesis_agent

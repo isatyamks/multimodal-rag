@@ -4,7 +4,7 @@ Flat file — replaces the old nested core/agents/*.py files.
 """
 
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Any
 
 from src.core.entities import Dataset
 
@@ -59,5 +59,5 @@ class IGraphExporter(ABC):
     """Interface for exporting domain entities to graph structures."""
 
     @abstractmethod
-    def export(self, dataset: Dataset, output_dir: str, tenant_id: str) -> None:
+    def export(self, graph: Any, output_dir: str, filename: str) -> None:
         pass

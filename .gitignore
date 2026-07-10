@@ -35,12 +35,20 @@ ENV/
 .DS_Store
 
 # Data directories (ignore all data except .gitkeeps)
-data/
-data1/
+data/*
+!data/uploads/
+data/uploads/*
 !data/uploads/.gitkeep
+!data/processed/
+data/processed/*
 !data/processed/.gitkeep
+!data/vector_store/
+data/vector_store/*
 !data/vector_store/.gitkeep
+!data/cache/
+data/cache/*
 !data/cache/.gitkeep
+data1/
 
 # Logs
 logs/
@@ -82,3 +90,6 @@ secrets/
 credentials/
 *.key
 *.pem
+
+# Gemini AI
+.gemini/

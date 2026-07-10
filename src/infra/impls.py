@@ -181,13 +181,10 @@ class FileSystemDatasetReader(IDatasetReader):
 
 
 class NetworkXExporter(IGraphExporter):
-    """Exports a Dataset's graph to GraphML format via NetworkX."""
+    """Exports a NetworkX graph to GraphML format."""
 
-    def export(self, dataset: Dataset, output_dir: str, tenant_id: str) -> None:
-        from src.data.graph import GraphService
-
-        graph_svc = GraphService(dataset)
-        g = graph_svc.graph.copy()
+    def export(self, graph: nx.DiGraph, output_dir: str, filename: str) -> None:
+        g = graph.copy()
 
         # Sanitize graph attributes for GraphML compatibility
         for n, data in g.nodes(data=True):
@@ -201,5 +198,5 @@ class NetworkXExporter(IGraphExporter):
         out_path = Path(output_dir)
         out_path.mkdir(parents=True, exist_ok=True)
 
-        out_file = out_path / f"{tenant_id}.graphml"
+        out_file = out_path / filename
         nx.write_graphml(g, str(out_file))
